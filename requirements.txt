@@ -1,0 +1,5 @@
+apscheduler
+https://github.com/New-dev0/Telethon/archive/Carbon.zip
+redis
+python-decouple
+python-dotenv
