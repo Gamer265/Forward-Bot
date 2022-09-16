@@ -51,54 +51,58 @@ except Exception as eo:
 CHATS = eval(Var.CHAT.strip())
 sch = AsyncIOScheduler()
 
-def set_id(ch_id, id):
-    _ = eval(dB.get(str(ch_id)) or "[]")
-    if id not in _:
-        _.append(id)
-        dB.set(str(ch_id), str(_))
 
-@bot.on(events.NewMessage())
+def set_id(ch_id, sent_id, source_ch_id, source_msg_id):
+    data = eval(dB.get(str("FRWD_CHATS")) or "{}")
+    if ch_id not in data:
+        if sent_id not in data:
+            data[ch_id][sent_id] = dict({"chat": source_ch_id, "msg": source_msg_id})
+    else:
+        data[ch_id] = dict({sent_id: {"chat": source_ch_id, "msg": source_msg_id}})
+    dB.set("FRWD_CHATS", str(data))
+
+
+def del_id(ch_id, send_id):
+    data = eval(dB.get(str("FRWD_CHATS")) or "{}")
+    if ch_id in list(data):
+        if send_id in list(data[ch_id]):
+            data[ch_id].pop(send_id)
+            if not data[ch_id]:
+                data.pop(ch_id)
+            dB.set("FRWD_CHATS", str(data))
+
+
+@bot.on(events.NewMessage(chats=list(CHATS)))
 async def auto_post(event):
-    th = await event.get_chat()
-    id = get_peer_id(th)
-    if id not in CHATS.keys():
-        return
+    ch_id = get_peer_id(event.chat)
     try:
-        for x in (CHATS.get(id) or []):
-            xxx = await event.forward_to(x)
-            set_id(x, xxx.id)
+        for chat in CHATS.get(ch_id) or []:
+            sent = await event.forward_to(chat)
+            set_id(chat, sent.id, ch_id, event.id)
     except Exception as error:
         LOGS.error(str(error))
 
+
 async def checker():
-    for x in CHATS.keys():
-        for chat in CHATS.get(x):
-            for xx in (eval(dB.get(str(chat)) or "[]")):
+    data = eval(dB.get(str("FRWD_CHATS")) or "{}")
+    for ch_id in list(data):
+        for sent_id in list(data[ch_id]):
+            try:
+                source = await bot.get_messages(
+                    data[ch_id][sent_id]["chat"], ids=data[ch_id][sent_id]["msg"]
+                )
+            except BaseException:
+                source = None
+            if not source:
+                del_id(ch_id, sent_id)
                 try:
-                    msg = await bot.get_messages(chat, ids=xx)
-                except:
-                    msg = None
-                if not msg:
-                    continue
-                try:
-                    id = msg.fwd_from.channel_post
-                except:
-                    id = None
-                if id:
-                    try:
-                        msgg = await bot.get_messages(x, ids=id)
-                    except:
-                        msgg = None
-                    if not msgg:
-                        await msg.delete()
-          
+                    dest = await bot.get_messages(ch_id, ids=sent_id)
+                    await dest.delete()
+                except BaseException:
+                    pass
 
 
 sch.add_job(checker, "interval", minutes=1)
 LOGS.info("Bot Started")
 sch.start()
 bot.loop.run_forever()
-
-
-
-
